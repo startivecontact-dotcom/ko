@@ -1,0 +1,248 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum EventCategory {
+  RANDONNEE
+  ESCALADE
+  OUTDOOR
+  INDOOR
+  EAT_AND_MEET
+}
+
+enum EventLevel {
+  FACILE
+  MOYEN
+  DIFFICILE
+  EXPERT
+}
+
+enum RegistrationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum ContentType {
+  TEXT
+  IMAGE
+  JSON
+}
+
+// ─── NextAuth Models ──────────────────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── User ─────────────────────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  name      String?
+  email     String   @unique
+  password  String?
+  image     String?
+  role      Role     @default(USER)
+  bio       String?  @db.Text
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // NextAuth relations
+  accounts Account[]
+  sessions Session[]
+
+  // App relations
+  events        Event[]
+  registrations Registration[]
+  posts         Post[]
+  comments      Comment[]
+  likes         Like[]
+
+  @@index([email])
+  @@index([role])
+}
+
+// ─── Event ────────────────────────────────────────────────────────────────────
+
+model Event {
+  id              String        @id @default(cuid())
+  title           String
+  slug            String        @unique
+  description     String        @db.Text
+  shortDesc       String?       @db.Text
+  date            DateTime
+  endDate         DateTime?
+  location        String
+  lat             Float?
+  lng             Float?
+  maxParticipants Int?
+  category        EventCategory @default(OUTDOOR)
+  level           EventLevel    @default(MOYEN)
+  image           String?
+  price           Float?        @default(0)
+  isPublished     Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  organizerId String
+  organizer   User   @relation(fields: [organizerId], references: [id], onDelete: Restrict)
+
+  registrations Registration[]
+
+  @@index([slug])
+  @@index([category])
+  @@index([level])
+  @@index([date])
+  @@index([isPublished])
+  @@index([organizerId])
+}
+
+// ─── Registration ─────────────────────────────────────────────────────────────
+
+model Registration {
+  id          String             @id @default(cuid())
+  userId      String?
+  eventId     String
+  guestName   String?
+  guestEmail  String?
+  status      RegistrationStatus @default(PENDING)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  user  User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  event Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+  @@index([userId])
+  @@index([eventId])
+  @@index([status])
+}
+
+// ─── Post ─────────────────────────────────────────────────────────────────────
+
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  slug      String   @unique
+  content   String   @db.Text
+  excerpt   String?  @db.Text
+  image     String?
+  published Boolean  @default(false)
+  likes     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  comments Comment[]
+  postLikes Like[]
+
+  @@index([slug])
+  @@index([published])
+  @@index([authorId])
+  @@index([createdAt])
+}
+
+// ─── Comment ──────────────────────────────────────────────────────────────────
+
+model Comment {
+  id         String   @id @default(cuid())
+  content    String   @db.Text
+  authorName String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([postId])
+  @@index([userId])
+}
+
+// ─── Like ─────────────────────────────────────────────────────────────────────
+
+model Like {
+  id        String   @id @default(cuid())
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([postId, userId])
+  @@index([postId])
+  @@index([userId])
+}
+
+// ─── SiteContent ─────────────────────────────────────────────────────────────
+
+model SiteContent {
+  id        String      @id @default(cuid())
+  key       String      @unique
+  value     String      @db.Text
+  type      ContentType @default(TEXT)
+  updatedAt DateTime    @updatedAt
+
+  @@index([key])
+  @@index([type])
+}
